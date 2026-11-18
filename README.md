@@ -1,5 +1,5 @@
 
-# ApartTUSITU's Xiaomi SM8250 Kernel  
+# ChenAEEdit's Xiaomi SM8250 Kernel  
 
 ## 目录 / Table of Contents
 - [简介 / Introduction](#简介--introduction)  
@@ -59,14 +59,6 @@ Feedback about this specific issue will not be accepted by default.
 
 ---
 
-## 社区 / Community
-**中文:**  
-欢迎加入 Starwing's QQ 交流群: **459094061**。  
-
-**English:**  
-Join Starwing's QQ Group: **459094061**  
-
----
 
 ## 支持的设备 / Supported Devices
 | 设备代号 / Codename | 设备名称 / Device Name            |
