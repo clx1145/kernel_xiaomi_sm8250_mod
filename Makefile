@@ -216,6 +216,10 @@ VPATH		:= $(srctree)$(if $(KBUILD_EXTMOD),:$(KBUILD_EXTMOD))
 
 export srctree objtree VPATH
 
+# Include only the KernelSU variant selected for this build.
+export KSU_DRIVER := $(if $(filter nova,$(KSU_VARIANT)),sukisu_nova,kernelsu)
+export KSU_DRIVER_KCONFIG := $(if $(filter nova ultra,$(KSU_VARIANT)),drivers/$(KSU_DRIVER)/Kconfig,/dev/null)
+
 # To make sure we do not include .config for any of the *config targets
 # catch them early, and hand them over to scripts/kconfig/Makefile
 # It is allowed to specify more targets when calling make, including

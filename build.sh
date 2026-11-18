@@ -5,13 +5,13 @@
 # Ensure the script exits on error
 set -e
 
-TOOLCHAIN_PATH=$HOME/zyc-clang/bin
+TOOLCHAIN_PATH=${TOOLCHAIN_PATH:-"$HOME/zyc-clang/bin"}
 GIT_COMMIT_ID=$(git rev-parse --short=8 HEAD)
 TARGET_DEVICE=$1
 
 if [ -z "$1" ]; then
     echo "Error: No argument provided, please specific a target device." 
-    echo "If you need KernelSU, please add [ksu] as the second arg."
+    echo "Use ksu for SukiSU Nova or ksu-ultra for SukiSU Ultra."
     echo "Examples:"
     echo "Build for lmi(K30 Pro/POCO F2 Pro) without KernelSU:"
     echo "    bash build.sh lmi"
@@ -22,7 +22,7 @@ fi
 
 
 
-if [ ! -d $TOOLCHAIN_PATH ]; then
+if [ ! -d "$TOOLCHAIN_PATH" ]; then
     echo "TOOLCHAIN_PATH [$TOOLCHAIN_PATH] does not exist."
     echo "Please ensure the toolchain is there, or change TOOLCHAIN_PATH in the script to your toolchain path."
     exit 1
@@ -55,16 +55,27 @@ export PATH="/usr/lib/ccache:$PATH"
 echo "CCACHE_DIR: [$CCACHE_DIR]"
 
 
-MAKE_ARGS="ARCH=arm64 SUBARCH=arm64 O=out CC=clang CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CLANG_TRIPLE=aarch64-linux-gnu-"
+MAKE_ARGS=(ARCH=arm64 SUBARCH=arm64 O=out CC=clang
+    CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+    CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CLANG_TRIPLE=aarch64-linux-gnu-)
 
 
-if [ "$1" == "j1" ]; then
-    make $MAKE_ARGS -j1
-    exit
-fi
+select_ksu_make_args() {
+    MAKE_ARGS+=("KSU_VARIANT=$1")
+    if [ "$1" = nova ]; then
+        MAKE_ARGS+=(KSU_GITHUB_VER=3.0.0 GITHUB_COMMITS=)
+    fi
+}
 
-if [ "$1" == "continue" ]; then
-    make $MAKE_ARGS -j$(nproc)
+if [ "$1" = j1 ] || [ "$1" = continue ]; then
+    if [ -f out/.sukisu-variant ]; then
+        select_ksu_make_args "$(cat out/.sukisu-variant)"
+    fi
+    jobs=$(nproc)
+    if [ "$1" = j1 ]; then
+        jobs=1
+    fi
+    make "${MAKE_ARGS[@]}" -j"$jobs"
     exit
 fi
 
@@ -82,24 +93,75 @@ clang --version
 
 
 
-KSU_ZIP_STR=NoKernelSU
-if [ "$2" == "ksu" ]; then
-    KSU_ENABLE=1
-    KSU_ZIP_STR=SukiSU-SUSFS
-else
-    KSU_ENABLE=0
-fi
-
+case "${2-}" in
+    ksu|nova)
+        KSU_VARIANT=nova
+        KSU_ZIP_STR=SukiSU-Nova
+        ;;
+    ksu-ultra|ultra)
+        KSU_VARIANT=ultra
+        KSU_ZIP_STR=SukiSU-SUSFS
+        ;;
+    ""|none)
+        KSU_VARIANT=none
+        KSU_ZIP_STR=NoKernelSU
+        ;;
+    *)
+        echo "Unknown KernelSU variant: $2" >&2
+        exit 2
+        ;;
+esac
 
 echo "TARGET_DEVICE: $TARGET_DEVICE"
+echo "KernelSU variant: $KSU_VARIANT"
 
-if [ $KSU_ENABLE -eq 1 ]; then
-    echo "KSU is enabled"
-    curl -LSs "https://raw.githubusercontent.com/ApartTUSITU/SukiSU-Ultra/main/kernel/setup.sh" | bash -s ApartTUSITU
-else
-    echo "KSU is disabled"
+if [ "$KSU_VARIANT" != none ]; then
+    bash scripts/setup-sukisu.sh "$KSU_VARIANT"
 fi
+select_ksu_make_args "$KSU_VARIANT"
 
+configure_ksu() {
+    case "$KSU_VARIANT" in
+        nova)
+            # Select the ARM64 backend supplied by Nova's Non-GKI branch.
+            scripts/config --file out/.config \
+                -e KSU -e KPROBES -e KALLSYMS -e KALLSYMS_ALL \
+                -e KSU_HACK_ARM64_BRANCH_LINK -d KSU_SUSFS -d KPM
+            ;;
+        ultra)
+            scripts/config --file out/.config \
+                -e KSU \
+                -e KSU_SUSFS \
+                -e KSU_SUSFS_SUS_PATH \
+                -e KSU_SUSFS_SUS_MOUNT \
+                -e KSU_SUSFS_SUS_KSTAT \
+                -e KSU_SUSFS_SPOOF_UNAME \
+                -e KSU_SUSFS_ENABLE_LOG \
+                -e KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
+                -e KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
+                -e KSU_SUSFS_OPEN_REDIRECT \
+                -e KSU_SUSFS_SUS_MAP \
+                -e THREAD_INFO_IN_TASK \
+                -e KPM
+            ;;
+        none)
+            scripts/config --file out/.config -d KSU
+            ;;
+    esac
+}
+
+compile_kernel() {
+    printf '%s\n' "$KSU_VARIANT" > out/.sukisu-variant
+    if [ "$KSU_VARIANT" = nova ]; then
+        make "${MAKE_ARGS[@]}" olddefconfig
+        if ! grep -qx 'CONFIG_KSU=y' out/.config ||
+           ! grep -qx 'CONFIG_KSU_HACK_ARM64_BRANCH_LINK=y' out/.config; then
+            echo "SukiSU Nova or its ARM64 hooks could not be enabled." >&2
+            return 1
+        fi
+    fi
+    make "${MAKE_ARGS[@]}" -j"$(nproc)"
+}
 
 echo "Cleaning..."
 
@@ -118,28 +180,11 @@ sed -i "s/${local_version_str}/${local_version_date_str}/g" arch/arm64/configs/$
 # ------------- Building for AOSP -------------
 
 echo "Building for AOSP......"
-make $MAKE_ARGS ${TARGET_DEVICE}_defconfig
+make "${MAKE_ARGS[@]}" "${TARGET_DEVICE}_defconfig"
 
-if [ $KSU_ENABLE -eq 1 ]; then
-    scripts/config --file out/.config \
-    -e KSU \
-    -e KSU_SUSFS \
-    -e KSU_SUSFS_SUS_PATH \
-    -e KSU_SUSFS_SUS_MOUNT \
-    -e KSU_SUSFS_SUS_KSTAT \
-    -e KSU_SUSFS_SPOOF_UNAME \
-    -e KSU_SUSFS_ENABLE_LOG \
-    -e KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
-    -e KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
-    -e KSU_SUSFS_OPEN_REDIRECT \
-    -e KSU_SUSFS_SUS_MAP \
-    -e THREAD_INFO_IN_TASK \
-    -e KPM
-else
-    scripts/config --file out/.config -d KSU
-fi
+configure_ksu
 
-make $MAKE_ARGS -j$(nproc)
+compile_kernel
 
 
 if [ -f "out/arch/arm64/boot/Image" ]; then
@@ -157,7 +202,7 @@ rm -rf anykernel/kernels/
 mkdir -p anykernel/kernels/
 
 # Patch for SukiSU KPM support. 
-if [ $KSU_ENABLE -eq 1 ]; then
+if [ "$KSU_VARIANT" = ultra ]; then
     cd out/arch/arm64/boot/
     wget https://github.com/SukiSU-Ultra/SukiSU_KernelPatch_patch/releases/download/0.12.2/patch_linux
     chmod +x patch_linux
@@ -252,26 +297,9 @@ sed -i 's/\/\/39 01 00 00 01 00 03 51 03 FF/39 01 00 00 01 00 03 51 03 FF/g' ${d
 sed -i 's/\/\/39 01 00 00 11 00 03 51 03 FF/39 01 00 00 11 00 03 51 03 FF/g' ${dts_source}/dsi-panel-j2-p2-1-38-0c-0a-dsc-cmd.dtsi
 
 
-make $MAKE_ARGS ${TARGET_DEVICE}_defconfig
+make "${MAKE_ARGS[@]}" "${TARGET_DEVICE}_defconfig"
 
-if [ $KSU_ENABLE -eq 1 ]; then
-    scripts/config --file out/.config \
-    -e KSU \
-    -e KSU_SUSFS \
-    -e KSU_SUSFS_SUS_PATH \
-    -e KSU_SUSFS_SUS_MOUNT \
-    -e KSU_SUSFS_SUS_KSTAT \
-    -e KSU_SUSFS_SPOOF_UNAME \
-    -e KSU_SUSFS_ENABLE_LOG \
-    -e KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
-    -e KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
-    -e KSU_SUSFS_OPEN_REDIRECT \
-    -e KSU_SUSFS_SUS_MAP \
-    -e THREAD_INFO_IN_TASK \
-    -e KPM
-else
-    scripts/config --file out/.config -d KSU
-fi
+configure_ksu
 
 
 scripts/config --file out/.config \
@@ -303,7 +331,7 @@ scripts/config --file out/.config \
     -e MI_RECLAIM \
     -e RTMM \
 
-make $MAKE_ARGS -j$(nproc)
+compile_kernel
 
 
 
@@ -326,7 +354,7 @@ rm -rf anykernel/kernels/
 mkdir -p anykernel/kernels/
 
 # Patch for SukiSU KPM support. 
-if [ $KSU_ENABLE -eq 1 ]; then
+if [ "$KSU_VARIANT" = ultra ]; then
     cd out/arch/arm64/boot/
     wget https://github.com/SukiSU-Ultra/SukiSU_KernelPatch_patch/releases/download/0.12.2/patch_linux
     chmod +x patch_linux

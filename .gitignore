@@ -136,3 +136,9 @@ all.config
 kernel/configs/android-*.cfg
 
 out/
+
+# SukiSU source checkouts and Kbuild links
+/KernelSU/
+/KernelSU-Nova/
+/drivers/kernelsu
+/drivers/sukisu_nova
