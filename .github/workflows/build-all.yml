@@ -2,6 +2,20 @@ name: Build All Devices Kernel (Matrix Parallel)
 
 on:
   workflow_dispatch:
+    inputs:
+      variant:
+        description: '内核版本（默认构建 Nova 和 NoKernelSU）'
+        required: true
+        default: nova-and-none
+        type: choice
+        options:
+          - nova-and-none
+          - nova
+          - ultra
+          - none
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -16,6 +30,7 @@ jobs:
       uses: actions/checkout@v4
       with:
         fetch-depth: 1
+        persist-credentials: false
 
     - name: Install dependencies
       run: |
@@ -26,22 +41,30 @@ jobs:
       run: |
         mkdir -p $HOME/zyc-clang
         cd $HOME/zyc-clang
-        wget https://github.com/ZyCromerZ/Clang/releases/download/15.0.7-20251111-release/Clang-15.0.7-20251111.tar.gz
-        tar -zxvf Clang-15.0.7-20251111.tar.gz
+        archive=Clang-15.0.7-20251111.tar.gz
+        wget "https://github.com/ZyCromerZ/Clang/releases/download/15.0.7-20251111-release/$archive"
+        printf '%s  %s\n' 0ee566f2e78867b5de06e40b99bec1c561f3c12151f88ab23743b54a287c8cae "$archive" | sha256sum -c -
+        tar -xzf "$archive"
         cd $GITHUB_WORKSPACE
 
-    - name: Build kernel for ${{ matrix.device }} (No KSU)
+    - name: Build kernel for ${{ matrix.device }}
+      env:
+        DEVICE: ${{ matrix.device }}
+        VARIANT: ${{ inputs.variant }}
       run: |
-        bash build.sh ${{ matrix.device }}
-
-    - name: Build kernel for ${{ matrix.device }} (With KSU)
-      run: |
-        bash build.sh ${{ matrix.device }} ksu
+        variants=("$VARIANT")
+        if [[ "$VARIANT" == nova-and-none ]]; then
+          variants=(none nova)
+        fi
+        for variant in "${variants[@]}"; do
+          bash build.sh "$DEVICE" "$variant"
+        done
 
     - name: Upload zips for ${{ matrix.device }}
       uses: actions/upload-artifact@v4
       with:
         name: zips-${{ matrix.device }}
+        if-no-files-found: error
         path: |
           Kernel_MIUI_${{ matrix.device }}*.zip
           Kernel_AOSP_${{ matrix.device }}*.zip
@@ -49,6 +72,8 @@ jobs:
   release:
     runs-on: ubuntu-22.04
     needs: build
+    permissions:
+      contents: write
     steps:
     - name: Download all artifacts
       uses: actions/download-artifact@v4
@@ -64,8 +89,8 @@ jobs:
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: build-${{ steps.vars.outputs.date }}-${{ steps.vars.outputs.sha }}
-        name: "Kernel Build ${{ steps.vars.outputs.date }}-${{ steps.vars.outputs.sha }}"
+        tag_name: build-${{ steps.vars.outputs.date }}-${{ steps.vars.outputs.sha }}-${{ inputs.variant }}
+        name: "Kernel Build ${{ steps.vars.outputs.date }}-${{ steps.vars.outputs.sha }} (${{ inputs.variant }})"
         body: "Automated kernel build for commit ${{ github.sha }}"
         files: ./release_zips/**/*.zip
       env:

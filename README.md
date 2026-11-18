@@ -26,13 +26,12 @@ If you want to know more about the [battery stuck at 1% issue](https://github.co
 
 ## 特性 / Features
 **中文:**  
-本内核支持 [SukiSU Ultra](https://github.com/SukiSU-Ultra/SukiSU-Ultra)(一个 KernelSU 的 fork，支持 KPM) & [SUSFS](https://github.com/sidex15/susfs4ksu-module)。请自行安装 [SukiSU Ultra 的管理器](https://github.com/ShirkNeko/SukiSU-Ultra/releases)，以及根据需要刷上 SUSFS 模块。NoKernelSU 版本支持应用 Magisk 和 APatch。  
+内核可构建为 [SukiSU Nova](https://github.com/SukiSU-Nova/SukiSU-Nova/releases)、SukiSU Ultra 或 NoKernelSU 版本。Nova 使用适配 4.19 非 GKI 内核的 `builtin-new` 分支，搭配 Nova 管理器。SUSFS 和 KPM 由旧版 SukiSU Ultra 构建提供，搭配 [Ultra 管理器](https://github.com/ShirkNeko/SukiSU-Ultra/releases)。NoKernelSU 版本支持 Magisk 和 APatch。
 
 Release 里的编译好的内核成品由 `android16-aptusitu-new` 分支编译，应当能在原版 MIUI/HyperOS 和第三方的基于 AOSP 的各种 Android11-16 的 ROM 上使用。欢迎大家尝试并反馈(提 Issue 或 Pull Requests)! 酷友们到 [酷安的这个帖子](https://www.coolapk.com/feed/67088487) 讨论或反馈，也可以给我私信反馈!  
 
 **English:**  
-This kernel supports [SukiSU Ultra](https://github.com/SukiSU-Ultra/SukiSU-Ultra) (a fork of KernelSU with KPM support) & [SUSFS](https://github.com/sidex15/susfs4ksu-module).  
-Please install the [SukiSU Ultra Manager](https://github.com/ShirkNeko/SukiSU-Ultra/releases) yourself, and flash the SUSFS module as needed.  
+The kernel can be built with [SukiSU Nova](https://github.com/SukiSU-Nova/SukiSU-Nova/releases), SukiSU Ultra, or NoKernelSU. Nova uses the `builtin-new` branch for the 4.19 Non-GKI kernel and pairs with the Nova manager. The legacy SukiSU Ultra build provides SUSFS and KPM and pairs with the [Ultra manager](https://github.com/ShirkNeko/SukiSU-Ultra/releases).
 The NoKernelSU version supports Magisk and APatch.  
 
 The prebuilt kernel in the **Release** section is compiled from the `android16-aptusitu-new` branch, and should work on stock MIUI/HyperOS as well as third-party AOSP-based ROMs for Android 11–16.  
@@ -105,14 +104,14 @@ Feedback about this specific issue will not be accepted by default.
 **中文:**  
 1. fork 本仓库(别忘了点个 Star~)  
 2. 进入 **Actions**  
-3. 如果你要为所有支持的设备编译内核，找到 `Build All Devices Kernel (Matrix Parallel + Release)`，点击 `Run workflow`  
-4. 如果你要为单个设备编译内核，找到 `Build Kernel`， 点击 `Run workflow` 并选择必要内容  
+3. 编译单台设备时，运行 `Build Kernel`，选择设备和版本。`nova` 对应 SukiSU Nova，`ultra` 对应旧版 SukiSU Ultra，`none` 对应 NoKernelSU。
+4. 批量编译时，运行 `Build All Devices Kernel (Matrix Parallel)`。默认构建 Nova 和 NoKernelSU，选择其他版本可单独构建。矩阵全部成功后，工作流会将 ZIP 打包到 GitHub Release。
 
 **English:**  
 1. Fork this repo (don’t forget to leave a Star~)  
 2. Go to **Actions**  
-3. If you want to compile the kernel for all supported devices, find `Build All Devices Kernel (Matrix Parallel + Release)` and click `Run workflow`  
-4. If you want to compile the kernel for a single device, find `Build Kernel`, click `Run workflow`, and select the necessary options  
+3. For a single device, run `Build Kernel` and select a device and variant. Choose `nova` for SukiSU Nova, `ultra` for legacy SukiSU Ultra, or `none` for NoKernelSU.
+4. For a batch build, run `Build All Devices Kernel (Matrix Parallel)`. The default builds Nova and NoKernelSU. You can also select a single variant. The workflow attaches the ZIPs to a GitHub Release after all builds pass.
 
 ---
 
@@ -151,9 +150,13 @@ Feedback about this specific issue will not be accepted by default.
      ```
      bash build.sh TARGET_DEVICE
      ```
-   - 使用 KernelSU:  
+   - 使用 SukiSU Nova
      ```
      bash build.sh TARGET_DEVICE ksu
+     ```
+   - 使用旧版 SukiSU Ultra（含 SUSFS 和 KPM）
+     ```
+     bash build.sh TARGET_DEVICE ksu-ultra
      ```
 
    示例:  
@@ -161,7 +164,7 @@ Feedback about this specific issue will not be accepted by default.
      ```
      bash build.sh lmi
      ```
-   - umi (Xiaomi 10) 使用 KernelSU:  
+   - umi (Xiaomi 10) 使用 SukiSU Nova
      ```
      bash build.sh umi ksu
      ```
@@ -202,9 +205,13 @@ Feedback about this specific issue will not be accepted by default.
      ```
      bash build.sh TARGET_DEVICE
      ```
-   - With KernelSU:  
+   - With SukiSU Nova
      ```
      bash build.sh TARGET_DEVICE ksu
+     ```
+   - With legacy SukiSU Ultra, including SUSFS and KPM
+     ```
+     bash build.sh TARGET_DEVICE ksu-ultra
      ```
 
    Example:  
@@ -212,9 +219,19 @@ Feedback about this specific issue will not be accepted by default.
      ```
      bash build.sh lmi
      ```
-   - umi (Xiaomi 10) with KernelSU:  
+   - umi (Xiaomi 10) with SukiSU Nova
      ```
      bash build.sh umi ksu
      ```
 
    Additionally, `buildall.sh` can build for all supported devices at once.  
+
+### 本地打包 boot.img / Repack boot.img locally
+
+在 Linux 或 WSL 中，用与设备和 ROM 匹配的原始 Android boot v3 镜像与 MIUI AnyKernel3 ZIP 生成新镜像。Debian 或 Ubuntu 的 x86-64 主机可用 `sudo apt install unzip qemu-user` 安装依赖。
+
+On Linux or WSL, use the original Android boot v3 image for your device and ROM with the MIUI AnyKernel3 ZIP. On x86-64 Debian or Ubuntu, install `unzip` and `qemu-user`.
+
+```bash
+bash scripts/pack-boot.sh boot.img MIUI-AnyKernel3.zip boot-nova.img
+```
